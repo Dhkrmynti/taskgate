@@ -1,0 +1,82 @@
+@import "choices.js/public/assets/styles/choices.min.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+    /* DataTables Global Styles */
+    .dataTable {
+        @apply border-collapse border-spacing-0 w-full;
+    }
+
+    .dataTable thead th,
+    .dataTable tbody td {
+        @apply border-r border-brand-line dark:border-brand-darkLine !important;
+    }
+
+    .dataTable thead th:first-child,
+    .dataTable tbody td:first-child {
+        @apply border-l border-brand-line dark:border-brand-darkLine !important;
+    }
+
+    /* DataTables Controls Industrial Styling */
+    .dataTables_wrapper .dataTables_length,
+    .dataTables_wrapper .dataTables_filter {
+        @apply mb-4 flex flex-col gap-2 !important;
+        @apply text-brand-muted dark:text-slate-400 !important;
+    }
+
+    @screen md {
+        .dataTables_wrapper .dataTables_length,
+        .dataTables_wrapper .dataTables_filter {
+            @apply flex-row items-center !important;
+        }
+    }
+
+    /* Fix clipping by giving labels some space */
+    .dataTables_wrapper .dataTables_length label,
+    .dataTables_wrapper .dataTables_filter label {
+        @apply flex items-center gap-2 !important;
+        @apply overflow-visible !important; /* Prevent first letter clipping */
+        @apply pl-1 !important;
+    }
+
+    .dataTables_wrapper .dataTables_length select {
+        @apply rounded-xl border border-brand-line bg-white px-3 py-2 text-sm outline-none transition dark:border-brand-darkLine dark:bg-brand-darkBg dark:text-white !important;
+        @apply min-w-[80px] !important;
+    }
+
+    .dataTables_wrapper .dataTables_filter input {
+        @apply ml-0 w-full rounded-xl border border-brand-line bg-white px-4 py-2.5 text-sm outline-none transition focus:border-brand-blue dark:border-brand-darkLine dark:bg-brand-darkBg dark:text-white dark:focus:border-white !important;
+    }
+
+    .dataTables_wrapper .dataTables_info {
+        @apply mt-4 text-xs font-medium text-brand-muted dark:text-slate-500 !important;
+        @apply pl-1 !important; /* Prevent first letter clipping */
+    }
+
+    .dataTables_wrapper .dataTables_paginate {
+        @apply mt-4 flex flex-wrap items-center justify-end gap-2 !important;
+    }
+
+    .dataTables_wrapper .dataTables_paginate .paginate_button {
+        @apply rounded-lg border border-brand-line bg-white px-4 py-2 text-xs font-semibold text-brand-text transition hover:bg-slate-50 dark:border-brand-darkLine dark:bg-brand-darkBg dark:text-white dark:hover:bg-brand-darkPanel !important;
+        @apply cursor-pointer m-0 inline-flex items-center justify-center min-w-[32px] !important;
+    }
+
+    .dataTables_wrapper .dataTables_paginate .paginate_button.current {
+        @apply border-brand-blue bg-brand-blue text-white hover:bg-brand-blue hover:text-white dark:border-white dark:bg-white dark:text-brand-darkBg !important;
+    }
+
+    .dataTables_wrapper .dataTables_paginate .paginate_button.disabled {
+        @apply opacity-30 cursor-not-allowed !important;
+    }
+
+    .dataTables_wrapper .dataTables_paginate .paginate_button:not(.current):not(.disabled):hover {
+        @apply bg-slate-100 dark:bg-brand-darkPanel !important;
+    }
+
+    .dataTables_wrapper {
+        @apply relative !important;
+    }
+}
