@@ -251,7 +251,7 @@
                 }
             }
 
-            function openBatchModal() {
+            window.openBatchModal = function() {
                 const modal = document.getElementById('batch-modal');
                 const previewList = document.getElementById('preview-list');
                 if (!modal) return;
@@ -268,7 +268,7 @@
                 `).join('');
             }
 
-            function closeBatchModal() {
+            window.closeBatchModal = function() {
                 const modal = document.getElementById('batch-modal');
                 if (modal) {
                     modal.classList.add('hidden');
@@ -285,7 +285,7 @@
                 }
             }
 
-            async function submitBatch() {
+            window.submitBatch = async function() {
                 const btn = document.getElementById('submit-btn');
                 btn.disabled = true;
                 btn.innerHTML = 'Processing...';

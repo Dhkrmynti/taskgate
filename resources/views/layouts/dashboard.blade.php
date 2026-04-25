@@ -672,7 +672,7 @@ $activeMainMenu = request()->routeIs('dashboard')
       <div id="sidebar-backdrop" class="fixed inset-0 z-30 hidden bg-slate-950/45 backdrop-blur-[2px] lg:hidden"></div>
 
       <aside id="sidebar"
-         class="fixed inset-y-0 left-0 z-[60] flex w-[272px] -translate-x-full flex-col border-r border-[var(--panel-border)] bg-[var(--sidebar-bg)] lg:translate-x-0">
+         class="fixed inset-y-0 left-0 z-[60] flex w-[260px] lg:w-[272px] -translate-x-full flex-col border-r border-[var(--panel-border)] bg-[var(--sidebar-bg)] lg:translate-x-0">
          <div class="flex h-full flex-col px-4 py-3">
             <div class="flex items-center justify-between gap-3 px-2 pb-3">
                <div class="brand-container flex min-w-0 items-center gap-3">
@@ -1096,7 +1096,7 @@ $activeMainMenu = request()->routeIs('dashboard')
          <!-- Mobile Header (Floating) -->
          <header id="header-mobile" class="fixed left-0 right-0 top-0 z-50 lg:hidden pointer-events-none">
             <div class="px-3 pt-3 pointer-events-auto">
-               <div class="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-strong)] p-3 shadow-soft">
+               <div class="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-strong)] p-2 md:p-3 shadow-soft">
                   <div class="flex items-center justify-between gap-4">
                      <div class="flex min-w-0 items-center gap-2">
                         <button id="open-sidebar" type="button"
@@ -1264,7 +1264,7 @@ $activeMainMenu = request()->routeIs('dashboard')
             </div>
          </header>
 
-         <main class="pb-3 pt-[90px] lg:pt-[76px] px-3 lg:pl-0 lg:pr-3">
+         <main class="pb-3 pt-[67px] md:pt-[78px] lg:pt-[67px] px-3 lg:pl-0 lg:pr-3">
             <section
                class="mb-3 rounded-xl border border-[var(--panel-border)] bg-[var(--panel-bg)] p-3 shadow-soft">
                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1419,6 +1419,24 @@ $activeMainMenu = request()->routeIs('dashboard')
                width: '100%',
                responsive: false,
                pageLength: 25,
+               searchDelay: 500,
+               processing: false, 
+               drawCallback: function() {
+                  $(this).find('tbody tr.skeleton-row').remove();
+               },
+               preXhr: function(e, settings) {
+                  const api = new $.fn.dataTable.Api(settings);
+                  const colCount = api.columns().count();
+                  let skeletonRows = '';
+                  for (let i = 0; i < 6; i++) {
+                     skeletonRows += '<tr class="skeleton-row">';
+                     for (let j = 0; j < colCount; j++) {
+                        skeletonRows += '<td class="px-4 py-4"><div class="skeleton-item"></div></td>';
+                     }
+                     skeletonRows += '</tr>';
+                  }
+                  $(settings.nTable).find('tbody').html(skeletonRows);
+               },
                dom: '<"top"lf>rt<"bottom"ip><"clear">',
                language: {
                   search: "Cari:",

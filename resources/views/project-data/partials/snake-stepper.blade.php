@@ -266,6 +266,29 @@
         bottom: 100%;
         border-color: transparent transparent rgba(15, 23, 42, 0.95) transparent;
     }
+
+    @media (max-width: 768px) {
+        .snake-wrapper {
+            padding: 4rem 0;
+        }
+        .snake-container {
+            width: calc(100% - 40px);
+            min-width: unset;
+        }
+        .snake-node {
+            transform: translate(-50%, -50%) scale(0.65);
+        }
+        .snake-node.js-loaded {
+            transform: translate(-50%, -50%) scale(0.75);
+        }
+        .snake-node.is-current.js-loaded {
+            transform: translate(-50%, -50%) scale(0.9);
+        }
+        .snake-label {
+            font-size: 0.55rem;
+            width: 70px;
+        }
+    }
 </style>
 
 <div class="snake-wrapper">

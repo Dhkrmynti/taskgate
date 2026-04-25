@@ -3,6 +3,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Skeleton Loading Animation */
+@keyframes skeleton-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.skeleton-item {
+    background: linear-gradient(90deg, #f0f2f5 25%, #e6e8eb 50%, #f0f2f5 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite linear;
+    border-radius: 8px;
+    height: 12px;
+    width: 100%;
+}
+
+.dark .skeleton-item {
+    background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+    background-size: 200% 100%;
+}
+
+/* Global Responsive Typography */
+html {
+    font-size: 14px; /* Desktop Standard */
+}
+
+@media (max-width: 768px) {
+    html {
+        font-size: 13px; /* Slightly more compact for mobile */
+    }
+}
+
 @layer components {
     /* DataTables Global Styles */
     .dataTable {
@@ -17,6 +48,19 @@
     .dataTable thead th:first-child,
     .dataTable tbody td:first-child {
         @apply border-l border-brand-line dark:border-brand-darkLine !important;
+    }
+
+    /* Mobile Table Optimization */
+    @media (max-width: 768px) {
+        .dataTable thead th,
+        .dataTable tbody td {
+            @apply px-2 py-1.5 text-[11px] !important; /* Smaller text & padding for mobile */
+        }
+        
+        .dataTables_wrapper .dataTables_info,
+        .dataTables_wrapper .dataTables_paginate {
+            @apply text-[10px] !important;
+        }
     }
 
     /* DataTables Controls Industrial Styling */
