@@ -81,7 +81,7 @@
                                         <p class="text-xs font-semibold text-slate-700 dark:text-slate-300 line-clamp-2 max-w-[300px]">{{ $item->description }}</p>
                                     </td>
                                     <td class="px-6 py-4 text-center">
-                                        <span class="text-xs font-bold text-slate-400">{{ $item->volume_planning }}</span>
+                                        <span class="text-xs font-bold text-slate-400 dark:text-slate-300">{{ $item->volume_planning }}</span>
                                     </td>
                                     <td class="px-6 py-4 text-center">
                                         <input type="number" name="boq[{{ $key }}][volume_realisasi]" 
@@ -130,9 +130,9 @@
 
                         <div class="pt-6 border-t border-white/10 space-y-3">
                             <div>
-                                <label class="block text-[10px] font-black uppercase text-slate-400 mb-2">Nomor APM</label>
+                                <label class="block text-[10px] font-black uppercase text-slate-400 dark:text-slate-300 mb-2">Nomor APM</label>
                                 <input type="text" name="apm_number" required placeholder="Masukkan APM..." 
-                                    class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:ring-2 focus:ring-blue-500 outline-none transition">
+                                    class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 outline-none transition">
                             </div>
 
                             <div>
@@ -206,20 +206,41 @@
             },
             showLoaderOnConfirm: true,
             preConfirm: () => {
-                return fetch('{{ route("tasks.finance.rekon-process") }}', {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
+                return new Promise((resolve, reject) => {
+                    const fileInput = document.getElementById('evidence-input');
+                    const fileName = fileInput.files[0] ? fileInput.files[0].name : "Finance Evidence";
+                    
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', '{{ route("tasks.finance.rekon-process") }}', true);
+                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+                    if (window.trackUpload) {
+                        window.trackUpload(xhr, fileName);
                     }
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        return response.json().then(err => { throw new Error(err.error || 'Terjadi kesalahan sistem') });
-                    }
-                    return response.json();
-                })
-                .catch(error => {
+
+                    xhr.onload = function() {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            try {
+                                resolve(JSON.parse(xhr.responseText));
+                            } catch(e) {
+                                reject('Gagal memproses respon server');
+                            }
+                        } else {
+                            try {
+                                const err = JSON.parse(xhr.responseText);
+                                reject(err.error || 'Terjadi kesalahan sistem');
+                            } catch(e) {
+                                reject('Server error');
+                            }
+                        }
+                    };
+
+                    xhr.onerror = function() {
+                        reject('Network error occurred');
+                    };
+
+                    xhr.send(formData);
+                }).catch(error => {
                     Swal.showValidationMessage(`Gagal: ${error}`);
                 });
             },

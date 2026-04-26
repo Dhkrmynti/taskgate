@@ -147,6 +147,9 @@
         transform: translateX(-50%);
         line-height: 1.2;
     }
+    .dark .snake-label {
+        color: #64748b;
+    }
     .snake-node.top-label .snake-label {
         bottom: calc(100% + 5px);
     }
@@ -408,9 +411,9 @@
 
                 @if(isset($subfaseMapping[$key]))
                     <div class="snake-tooltip">
-                        <div class="text-[10px] font-black mb-2 text-white/40 uppercase tracking-widest border-b border-white/10 pb-1.5 flex items-center justify-between">
+                        <div class="text-[10px] font-black mb-2 text-white/50 uppercase tracking-widest border-b border-white/10 pb-1.5 flex items-center justify-between">
                             <span>Sub-Phases</span>
-                            <span class="text-[8px] font-bold text-blue-400 capitalize">{{ $data['label'] }}</span>
+                            <span class="text-[8px] font-bold text-blue-300 capitalize">{{ $data['label'] }}</span>
                         </div>
                         <div class="space-y-2">
                             @foreach($subfaseMapping[$key] as $sk => $sl)
@@ -420,7 +423,7 @@
                                     $isOgp = $st === 'ogp';
                                 @endphp
                                 <div class="flex items-center justify-between gap-4">
-                                    <span class="text-[10px] font-bold {{ $isDone ? 'text-emerald-400' : ($isOgp ? 'text-blue-400' : 'text-slate-500') }}">{{ $sl }}</span>
+                                    <span class="text-[10px] font-bold {{ $isDone ? 'text-emerald-400' : ($isOgp ? 'text-blue-400' : 'text-slate-400') }}">{{ $sl }}</span>
                                     @if($isDone)
                                         <div class="flex items-center gap-1.5">
                                             @php $subFiles = $evidenceMap->get($sk, collect()); @endphp

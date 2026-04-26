@@ -35,9 +35,16 @@
 <style>
     .linear-stepper-wrapper {
         position: relative;
-        padding: 2rem 0;
+        padding: 2.5rem 0;
         width: 100%;
         overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none; /* IE 10+ */
+    }
+    .linear-stepper-wrapper::-webkit-scrollbar {
+        display: none; /* Chrome/Safari */
     }
 
     .stepper-progress-track {
@@ -68,7 +75,14 @@
         display: flex;
         justify-content: space-between;
         z-index: 3;
-        min-width: {{ max(600, $totalCount * 150) }}px;
+        min-width: {{ max(450, $totalCount * 130) }}px;
+        padding: 0 1rem;
+    }
+
+    @media (max-width: 640px) {
+        .stepper-items-container {
+            min-width: {{ max(100, $totalCount * 110) }}px;
+        }
     }
 
     .stepper-item {
@@ -78,6 +92,7 @@
         align-items: center;
         text-align: center;
         position: relative;
+        scroll-snap-align: center;
     }
 
     .stepper-marker {
@@ -131,6 +146,29 @@
     .stepper-action-zone {
         margin-top: 8px;
         min-height: 40px;
+    }
+
+    @media (max-width: 640px) {
+        .stepper-marker {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+        }
+        .stepper-item.is-current .stepper-marker {
+            width: 44px;
+            height: 44px;
+        }
+        .stepper-progress-track {
+            top: 20px;
+        }
+        .stepper-label {
+            font-size: 8.5px;
+            max-width: 80px;
+        }
+        .stepper-marker svg {
+            width: 1rem;
+            height: 1rem;
+        }
     }
 </style>
 
@@ -263,7 +301,7 @@
                                     @elseif($subKey === 'procurement_selection')
                                         <span class="text-[9px] font-black text-green-600 uppercase tracking-widest">Tervalidasi</span>
                                     @else
-                                        <form action="{{ route('project-data.evidences.store', $project) }}" method="POST" enctype="multipart/form-data">
+                                        <form action="{{ route('project-data.evidences.store', $project) }}" method="POST" enctype="multipart/form-data" class="evidence-upload-form">
                                             @csrf
                                             <input type="hidden" name="type" value="{{ $subKey }}">
                                             <input type="hidden" name="redirect_to" value="tasks.manage">
@@ -271,7 +309,8 @@
                                             <input type="file" name="evidence_file" accept=".jpg,.jpeg,.png,.pdf,.csv,.xlsx" 
                                                 onchange="this.form.submit()" class="hidden" id="file-{{ $subKey }}">
                                             <label for="file-{{ $subKey }}" class="inline-flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-blue-200 bg-blue-50/50 px-4 py-1.5 text-[10px] font-black text-blue-600 transition hover:border-blue-400 hover:bg-blue-100/50 dark:border-blue-900/30 dark:bg-blue-900/20 dark:text-blue-400">
-                                                {{ $hasEvidence ? 'RE-UPLOAD' : 'UPLOAD EVIDENCE' }}
+                                                <span class="hidden sm:inline">{{ $hasEvidence ? 'RE-UPLOAD' : 'UPLOAD EVIDENCE' }}</span>
+                                                <span class="sm:hidden">{{ $hasEvidence ? 'RE-UP' : 'UPLOAD' }}</span>
                                             </label>
                                         </form>
                                     @endif
@@ -320,3 +359,52 @@
         </div>
     </div>
 @endif
+
+@push('scripts')
+<script type="module">
+document.addEventListener('DOMContentLoaded', function() {
+    const uploadForms = document.querySelectorAll('.evidence-upload-form');
+    
+    uploadForms.forEach(form => {
+        const fileInput = form.querySelector('input[type="file"]');
+        
+        fileInput.addEventListener('change', function() {
+            if (!this.files.length) return;
+            
+            const formData = new FormData(form);
+            const fileName = this.files[0].name;
+            
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', form.getAttribute('action'), true);
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+            
+            if (window.trackUpload) {
+                window.trackUpload(xhr, fileName);
+            }
+            
+            xhr.onload = function() {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    if (window.showToast) {
+                        window.showToast('Evidence telah disimpan.', 'success');
+                    }
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    let msg = 'Gagal upload file.';
+                    try {
+                        const res = JSON.parse(xhr.responseText);
+                        msg = res.message || msg;
+                    } catch(e) {}
+                    if (window.showToast) {
+                        window.showToast(msg, 'error');
+                    }
+                }
+            };
+            
+            xhr.send(formData);
+        });
+    });
+});
+</script>
+@endpush

@@ -128,7 +128,7 @@
                                 <td class="px-4 py-6">
                                     <div class="flex flex-col">
                                         <span class="text-sm font-black text-slate-900 dark:text-white">{{ $item->designator }}</span>
-                                        <span class="text-[11px] text-slate-500 line-clamp-1 truncate max-w-[200px]" title="{{ $item->description }}">{{ $item->description }}</span>
+                                        <span class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 truncate max-w-[200px]" title="{{ $item->description }}">{{ $item->description }}</span>
                                     </div>
                                 </td>
                                 <td class="px-4 py-6 text-center">
@@ -308,31 +308,54 @@
             btn.innerHTML = '<span class="animate-pulse">Processing...</span>';
             
             let formData = new FormData(form);
+            const fileInput = document.getElementById('rekon_evidence');
+            const fileName = fileInput.files[0] ? fileInput.files[0].name : "BARM Document";
             
-            fetch('{{ route("tasks.warehouse.rekon-process") }}', {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                }
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    showToast('success', result.message);
-                    setTimeout(() => {
-                        window.location.href = result.redirect;
-                    }, 1500);
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '{{ route("tasks.warehouse.rekon-process") }}', true);
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+            xhr.setRequestHeader('X-CSRF-TOKEN', '{{ csrf_token() }}');
+
+            if (window.trackUpload) {
+                window.trackUpload(xhr, fileName);
+            }
+
+            xhr.onload = function() {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const result = JSON.parse(xhr.responseText);
+                        if (result.success) {
+                            showToast('success', result.message);
+                            setTimeout(() => {
+                                window.location.href = result.redirect;
+                            }, 1500);
+                        } else {
+                            throw new Error(result.error || 'Server error');
+                        }
+                    } catch (e) {
+                        showToast('error', e.message);
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                    }
                 } else {
-                    throw new Error(result.error || 'Server error');
+                    let errorMsg = 'Server error';
+                    try {
+                        const result = JSON.parse(xhr.responseText);
+                        errorMsg = result.error || result.message || errorMsg;
+                    } catch(e) {}
+                    showToast('error', errorMsg);
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
                 }
-            })
-            .catch(error => {
-                showToast('error', error.message);
+            };
+
+            xhr.onerror = function() {
+                showToast('error', 'Network error occurred');
                 btn.disabled = false;
                 btn.innerHTML = originalText;
-            });
+            };
+
+            xhr.send(formData);
         });
     });
 </script>

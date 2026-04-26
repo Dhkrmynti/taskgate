@@ -324,10 +324,10 @@ class ProjectDataController extends Controller
         $batchSubfaseStatuses = $parentSp ? $parentSp->unifiedSubfases->pluck('status', 'subfase_key') : collect();
         $batchEvidences = $parentSp ? $parentSp->unifiedEvidences : collect();
 
-        $boqTotals = [
-            'plan' => $boqDetails->sum(fn($i) => $i->volume_planning * $i->price_planning),
-            'aktual' => $boqDetails->sum(fn($i) => $i->volume_aktual * $i->price_aktual)
-        ];
+        // Database-level totals instead of collection-level sum for better performance
+        $boqTotals = $project->boqDetails()
+            ->selectRaw('SUM(volume_planning * price_planning) as plan, SUM(volume_aktual * price_aktual) as aktual')
+            ->first();
         
         $phaseAction = $isBatch ? $this->getPhaseAction($project->fase) : null;
         $canEditBoq = $role === 'admin' || $role === 'commerce';
@@ -405,34 +405,50 @@ class ProjectDataController extends Controller
 
             // It's already updated at line 367, so we'll just remove the legacy call at 387
         } else {
+            $evidenceData = [];
+            $lastPath = null;
+            $now = now();
+
+            if (!empty($files)) {
+                $oldEvidences = $project->unifiedEvidences()->where('type', $request->type)->get();
+                foreach ($oldEvidences as $old) {
+                    if (str_starts_with($old->file_path, 'evidences/')) {
+                        \Illuminate\Support\Facades\Storage::disk('public')->delete($old->file_path);
+                    }
+                    $old->delete();
+                }
+            }
+
             foreach ($files as $file) {
                 $path = $file->store('evidences/' . $id, 'public');
-                $project->unifiedEvidences()->create([
+                $lastPath = $path;
+                $evidenceData[] = [
+                    'faseable_id' => $project->id,
+                    'faseable_type' => get_class($project),
                     'type' => $request->type, 
                     'file_name' => $file->getClientOriginalName(), 
                     'file_path' => $path, 
                     'file_extension' => $file->getClientOriginalExtension(), 
-                    'file_size' => $file->getSize()
-                ]);
+                    'file_size' => $file->getSize(),
+                    'created_at' => $now,
+                    'updated_at' => $now
+                ];
 
-                // Auto-update subfase status to selesai (Unified)
-                $project->unifiedSubfases()->updateOrCreate(
-                    ['subfase_key' => $request->type],
-                    ['status' => 'selesai']
-                );
-
-                // Auto-sync rekon files
-                if ($request->type === 'rekon_evidence' || $request->type === 'warehouse_evidence') {
-                    $project->update(['rekon_file_path' => $path]);
-                }
-                if ($request->type === 'finance_ba') {
-                    $project->update(['evidence_path' => $path]);
-                }
-
-                // Auto-sync BoQ details if file type is 'boq'
                 if ($request->type === 'boq') {
                     $this->syncBoqFromExcel($isBatch, $project, storage_path('app/public/' . $path));
                 }
+            }
+
+            if (!empty($evidenceData)) {
+                DB::transaction(function() use ($project, $evidenceData, $request, $lastPath) {
+                    DB::table('unified_evidences')->insert($evidenceData);
+                    $project->unifiedSubfases()->updateOrCreate(['subfase_key' => $request->type], ['status' => 'selesai']);
+
+                    $updates = [];
+                    if ($request->type === 'rekon_evidence' || $request->type === 'warehouse_evidence') $updates['rekon_file_path'] = $lastPath;
+                    if ($request->type === 'finance_ba') $updates['evidence_path'] = $lastPath;
+                    if (!empty($updates)) $project->update($updates);
+                });
             }
         }
 
@@ -448,45 +464,68 @@ class ProjectDataController extends Controller
 
     private function syncBoqFromExcel($isBatch, $project, $fullPath)
     {
-        $extension = strtolower(pathinfo($fullPath, PATHINFO_EXTENSION));
-        if ($extension === 'csv') {
-            $reader = new \App\Support\SimpleCsvReader();
-        } else {
-            $reader = new \App\Support\SimpleXlsxReader();
-        }
-
         try {
+            $isBatchMode = str_starts_with($project->id, 'TGIDSP-');
             $worksheets = $reader->read($fullPath);
             $rows = $worksheets[0]['rows'] ?? [];
-            
-            $itemsToInsert = [];
-            
-            // Skip Header (row index 0)
+            if (count($rows) <= 1) return;
+
+            // 1. Collect all unique designators from Excel
+            $designators = [];
+            $excelData = [];
             for ($i = 1; $i < count($rows); $i++) {
                 $row = $rows[$i];
-                $designator = trim((string) ($row[2] ?? ''));
-                if ($designator === '') continue;
+                $d = trim((string) ($row[2] ?? ''));
+                if ($d === '') continue;
+                $designators[] = $d;
+                $excelData[] = [
+                    'designator' => $d,
+                    'volume' => (float) ($row[3] ?? 0),
+                    'sort_order' => $i
+                ];
+            }
 
-                $volume = (float) ($row[3] ?? 0);
+            if (empty($designators)) return;
+
+            // 2. Bulk Fetch KHS Records (Single Query)
+            $uniqueDesignators = array_unique($designators);
+            $khsRecords = \App\Models\KhsRecord::query()
+                ->where(function($q) use ($uniqueDesignators) {
+                    foreach ($uniqueDesignators as $d) {
+                        $q->orWhere('data->designator_material', (string)$d)
+                          ->orWhere('data->designator_jasa', (string)$d)
+                          ->orWhere('data->designator', (string)$d);
+                    }
+                })
+                ->get();
+
+            // 3. Map KHS data by designators in memory
+            $khsMap = [];
+            foreach ($khsRecords as $record) {
+                $data = $record->data;
+                $dm = $data['designator_material'] ?? null;
+                $dj = $data['designator_jasa'] ?? null;
+                $db = $data['designator'] ?? null;
                 
-                // Cari di database KHS
-                $khs = \App\Models\KhsRecord::query()
-                    ->where(function($q) use ($designator) {
-                        $q->where('data->designator_material', (string)$designator)
-                          ->orWhere('data->designator_jasa', (string)$designator)
-                          ->orWhere('data->designator', (string)$designator);
-                    })
-                    ->latest('id')
-                    ->first();
+                if ($dm) $khsMap[$dm] = $data;
+                if ($dj) $khsMap[$dj] = $data;
+                if ($db) $khsMap[$db] = $data;
+            }
 
+            // 4. Prepare data for Bulk Insert
+            $itemsToInsert = [];
+            $now = now();
+            foreach ($excelData as $item) {
+                $d = $item['designator'];
+                $khsData = $khsMap[$d] ?? null;
+                
                 $description = '-';
                 $price = 0;
 
-                if ($khs) {
-                    $khsData = $khs->data;
+                if ($khsData) {
                     $description = $khsData['uraian_pekerjaan'] ?? '-';
-                    $isMaterial = str_starts_with(strtoupper($designator), 'M-');
-                    $isJasa = str_starts_with(strtoupper($designator), 'J-');
+                    $isMaterial = str_starts_with(strtoupper($d), 'M-');
+                    $isJasa = str_starts_with(strtoupper($d), 'J-');
                     
                     if ($isMaterial) {
                         $price = (float) ($khsData['paket_5_material'] ?? 0);
@@ -498,22 +537,56 @@ class ProjectDataController extends Controller
                 }
 
                 $itemsToInsert[] = [
-                    'designator' => $designator,
+                    ($isBatchMode ? 'project_batch_id' : 'project_id') => $project->id,
+                    'designator' => $d,
                     'description' => $description,
-                    'volume_planning' => $volume,
+                    'volume_planning' => $item['volume'],
                     'price_planning' => $price,
-                    'sort_order' => $i
+                    'sort_order' => $item['sort_order'],
+                    'created_at' => $now,
+                    'updated_at' => $now
                 ];
             }
 
+            // 5. Bulk Operation (Delete then Insert)
             if (!empty($itemsToInsert)) {
-                // Clear existing details
-                $project->boqDetails()->delete();
-                
-                // Batch insert (create() inside loop or insert() but careful with timestamps)
-                foreach ($itemsToInsert as $item) {
-                    $project->boqDetails()->create($item);
-                }
+                DB::transaction(function() use ($project, $itemsToInsert, $isBatchMode) {
+                    $project->boqDetails()->delete();
+                    $tableName = $isBatchMode ? 'project_batch_boq_details' : 'project_boq_details';
+                    
+                    foreach (array_chunk($itemsToInsert, 500) as $chunk) {
+                        DB::table($tableName)->insert($chunk);
+                    }
+
+                    // PROPAGATION: If Batch, update all constituent sites in BULK
+                    if ($isBatchMode) {
+                        $siteIds = $project->projects()->pluck('id')->toArray();
+                        if (!empty($siteIds)) {
+                            // 1. Delete old site BoQs
+                            DB::table('project_boq_details')->whereIn('project_id', $siteIds)->delete();
+                            
+                            // 2. Multi-insert to all sites efficiently
+                            $siteItems = [];
+                            foreach ($siteIds as $siteId) {
+                                foreach ($itemsToInsert as $item) {
+                                    $siteItem = $item;
+                                    unset($siteItem['project_batch_id']);
+                                    $siteItem['project_id'] = $siteId;
+                                    $siteItems[] = $siteItem;
+                                    
+                                    // Chunk to prevent memory issues
+                                    if (count($siteItems) >= 1000) {
+                                        DB::table('project_boq_details')->insert($siteItems);
+                                        $siteItems = [];
+                                    }
+                                }
+                            }
+                            if (!empty($siteItems)) {
+                                DB::table('project_boq_details')->insert($siteItems);
+                            }
+                        }
+                    }
+                });
             }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error("Failed to sync BoQ for project {$project->id}: " . $e->getMessage());
@@ -705,11 +778,12 @@ class ProjectDataController extends Controller
     // Removed propagatePhase as it is replaced by updateProjectPhase trait method
 
     private function resolveProject($id) {
-        if (str_starts_with($id, 'TGIDSP-')) return \App\Models\ProjectBatch::findOrFail($id);
-        if (str_starts_with($id, 'TGIDRC-')) return \App\Models\CommerceRekon::findOrFail($id);
-        if (str_starts_with($id, 'TGIDRM-')) return \App\Models\WarehouseRekon::findOrFail($id);
-        if (str_starts_with($id, 'TGIDRF-')) return \App\Models\FinanceRekon::findOrFail($id);
-        return Project::findOrFail($id);
+        $relations = ['unifiedSubfases', 'unifiedEvidences'];
+        if (str_starts_with($id, 'TGIDSP-')) return \App\Models\ProjectBatch::with($relations)->findOrFail($id);
+        if (str_starts_with($id, 'TGIDRC-')) return \App\Models\CommerceRekon::with($relations)->findOrFail($id);
+        if (str_starts_with($id, 'TGIDRM-')) return \App\Models\WarehouseRekon::with($relations)->findOrFail($id);
+        if (str_starts_with($id, 'TGIDRF-')) return \App\Models\FinanceRekon::with($relations)->findOrFail($id);
+        return Project::with($relations)->findOrFail($id);
     }
 
     public function storeBoqItem(Request $request, $id) { 

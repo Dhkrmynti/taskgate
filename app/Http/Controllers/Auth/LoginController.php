@@ -17,10 +17,20 @@ class LoginController extends Controller
             'role' => ['required', 'string'],
         ]);
 
+        $throttleKey = strtolower($request->input('email')) . '|' . $request->ip();
+
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $seconds = \Illuminate\Support\Facades\RateLimiter::availableIn($throttleKey);
+            throw ValidationException::withMessages([
+                'email' => "Terlalu banyak percobaan login. Silakan coba lagi dalam $seconds detik.",
+            ]);
+        }
+
         $role = $credentials['role'];
         unset($credentials['role']);
 
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
+            \Illuminate\Support\Facades\RateLimiter::clear($throttleKey);
             $user = Auth::user();
 
             if ($user->role !== $role) {
@@ -35,8 +45,11 @@ class LoginController extends Controller
             return redirect()->intended('dashboard');
         }
 
+        \Illuminate\Support\Facades\RateLimiter::hit($throttleKey);
+        $retriesLeft = \Illuminate\Support\Facades\RateLimiter::retriesLeft($throttleKey, 5);
+
         throw ValidationException::withMessages([
-            'email' => __('auth.failed'),
+            'email' => "Password/email salah. Sisa kesempatan login: $retriesLeft kali lagi.",
         ]);
     }
 

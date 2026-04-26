@@ -31,7 +31,7 @@
                 @endif
             </div>
 
-            <form action="{{ route('khs.import') }}" method="POST" enctype="multipart/form-data" class="mt-5 flex flex-wrap items-center gap-3">
+            <form id="khs-import-form" action="{{ route('khs.import') }}" method="POST" enctype="multipart/form-data" class="mt-5 flex flex-wrap items-center gap-3">
                 @csrf
                 <input name="khs_file" type="file" accept=".xlsx,.csv" required class="block rounded-xl border border-[#d9dceb] bg-white px-3 py-2.5 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-[#f3f4f6] file:px-3 file:py-2 file:text-sm file:font-medium dark:border-brand-darkLine dark:bg-[#0f1728] dark:text-white dark:file:bg-[#1c2540]">
                 <button type="submit" class="inline-flex h-11 items-center rounded-xl bg-brand-text px-5 text-sm font-semibold text-white transition hover:bg-[#2f3542] dark:bg-white dark:text-brand-darkBg">
@@ -406,6 +406,41 @@
                         }
                     });
                 };
+                $('#khs-import-form').on('submit', function(e) {
+                    e.preventDefault();
+                    var forData = new FormData(this);
+                    var fileInput = $(this).find('input[type="file"]')[0];
+                    var fileName = fileInput.files[0] ? fileInput.files[0].name : "KHS Database";
+
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('POST', $(this).attr('action'), true);
+                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+                    window.trackUpload(xhr, fileName);
+
+                    xhr.onload = function() {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            var res = JSON.parse(xhr.responseText);
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Import Berhasil',
+                                text: res.message || 'Data KHS telah diperbarui.',
+                                confirmButtonText: 'Oke'
+                            }).then(() => {
+                                window.location.reload();
+                            });
+                        } else {
+                            var errorMsg = 'Gagal mengunggah file';
+                            try {
+                                var res = JSON.parse(xhr.responseText);
+                                errorMsg = res.message || errorMsg;
+                            } catch(e) {}
+                            Swal.fire({ icon: 'error', title: 'Gagal', text: errorMsg });
+                        }
+                    };
+
+                    xhr.send(forData);
+                });
             })();
         </script>
     @endif

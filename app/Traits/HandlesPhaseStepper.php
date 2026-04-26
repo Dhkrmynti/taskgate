@@ -72,19 +72,35 @@ trait HandlesPhaseStepper
 
     protected function clearStepperCache($model)
     {
+        $this->clearSingleStepperCache($model);
+        
+        // 1. Clear Parents (Upward)
+        $parents = $this->collectAllParents($model);
+        foreach ($parents as $parent) {
+            $this->clearSingleStepperCache($parent);
+        }
+
+        // 2. Clear Descendants (Downward)
+        $descendantIds = $this->collectAllDescendantIds($model);
+        foreach ($descendantIds as $id => $class) {
+            $cacheKey = "stepper_data_" . strtolower(class_basename($class)) . "_" . $id;
+            cache()->forget($cacheKey);
+            
+            // Also financials if site
+            if ($class === \App\Models\Project::class) {
+                $pid = DB::table('projects')->where('id', $id)->value('pid');
+                if ($pid) cache()->forget("financial_data_" . $pid);
+            }
+        }
+    }
+
+    private function clearSingleStepperCache($model)
+    {
         $cacheKey = "stepper_data_" . strtolower(class_basename($model)) . "_" . $model->id;
         cache()->forget($cacheKey);
         
-        // Also clear financials if it's a project or batch
         if ($model instanceof \App\Models\Project && $model->pid) {
             cache()->forget("financial_data_" . $model->pid);
-        }
-        
-        // Also clear parents' cache because children's change affects them
-        $parents = $this->collectAllParents($model);
-        foreach ($parents as $parent) {
-            $pKey = "stepper_data_" . strtolower(class_basename($parent)) . "_" . $parent->id;
-            cache()->forget($pKey);
         }
     }
 
@@ -121,44 +137,66 @@ trait HandlesPhaseStepper
 
     protected function aggregateDescendants($model, &$unifiedSubfaseStatuses, &$evidenceMap)
     {
-        $constituents = collect();
-        if (method_exists($model, 'constituents')) {
-            $constituents = $model->constituents;
-        } elseif (method_exists($model, 'batches')) {
-            $constituents = $model->batches;
-        } elseif ($model instanceof ProjectBatch) {
-            $constituents = $model->projects;
+        // Get all descendant IDs flatly to avoid N+1 recursive loading
+        $descendantIds = $this->collectAllDescendantIds($model);
+        
+        if ($descendantIds->isEmpty()) return;
+
+        // Fetch all subfase statuses for all descendants in ONE query
+        $allSubfases = \App\Models\UnifiedSubfase::whereIn('faseable_id', $descendantIds->keys())
+            ->whereIn('faseable_type', $descendantIds->values()->unique())
+            ->get(['id', 'subfase_key', 'status', 'faseable_id', 'faseable_type']);
+
+        foreach ($allSubfases as $sub) {
+            // Only update if not already set or override based on hierarchy logic if needed
+            // Here we merge to get the most "complete" view
+            if (!isset($unifiedSubfaseStatuses[$sub->subfase_key]) || $unifiedSubfaseStatuses[$sub->subfase_key] !== 'selesai') {
+                $unifiedSubfaseStatuses[$sub->subfase_key] = $sub->status;
+            }
         }
 
-        foreach ($constituents as $child) {
-            $child->loadMissing(['unifiedSubfases', 'unifiedEvidences']);
-            
-            $unifiedSubfaseStatuses = $child->unifiedSubfases->pluck('status', 'subfase_key')->merge($unifiedSubfaseStatuses);
+        // Fetch all evidence metadata for all descendants in ONE query
+        $allEvidences = \App\Models\UnifiedEvidence::whereIn('faseable_id', $descendantIds->keys())
+            ->whereIn('faseable_type', $descendantIds->values()->unique())
+            ->get(['id', 'type', 'file_path', 'file_name', 'faseable_id', 'faseable_type']);
 
-            foreach ($child->unifiedEvidences->groupBy('type') as $type => $files) {
-                if (!isset($evidenceMap[$type])) {
-                    $evidenceMap[$type] = $files;
-                } else {
-                    $existingPaths = collect($evidenceMap[$type])->pluck('file_path')->toArray();
-                    $newFiles = $files->filter(fn($f) => !in_array($f->file_path, $existingPaths));
-                    $evidenceMap[$type] = collect($evidenceMap[$type])->concat($newFiles);
-                }
+        foreach ($allEvidences->groupBy('type') as $type => $files) {
+            if (!isset($evidenceMap[$type])) {
+                $evidenceMap[$type] = $files;
+            } else {
+                $existingPaths = collect($evidenceMap[$type])->pluck('file_path')->toArray();
+                $newFiles = $files->filter(fn($f) => !in_array($f->file_path, $existingPaths));
+                $evidenceMap[$type] = collect($evidenceMap[$type])->concat($newFiles);
             }
-
-            $siblings = [];
-            if ($child instanceof \App\Models\CommerceRekon && method_exists($child, 'batches')) {
-                foreach($child->batches as $b) if ($b->warehouseRekon) $siblings[] = $b->warehouseRekon;
-            }
-            if ($child instanceof \App\Models\WarehouseRekon && method_exists($child, 'batches')) {
-                foreach($child->batches as $b) if ($b->commerceRekon) $siblings[] = $b->commerceRekon;
-            }
-            foreach ($siblings as $sibling) {
-                $sibling->loadMissing('unifiedSubfases');
-                $unifiedSubfaseStatuses = $sibling->unifiedSubfases->pluck('status', 'subfase_key')->merge($unifiedSubfaseStatuses);
-            }
-
-            $this->aggregateDescendants($child, $unifiedSubfaseStatuses, $evidenceMap);
         }
+    }
+
+    protected function collectAllDescendantIds($model): Collection
+    {
+        $ids = collect();
+        $toProcess = [[$model->id, get_class($model)]];
+
+        while (!empty($toProcess)) {
+            [$currentId, $currentClass] = array_pop($toProcess);
+            $children = collect();
+
+            if ($currentClass === \App\Models\FinanceRekon::class) {
+                $cIds = DB::table('commerce_rekons')->where('finance_rekon_id', $currentId)->pluck('id')->toArray();
+                $wIds = DB::table('warehouse_rekons')->where('finance_rekon_id', $currentId)->pluck('id')->toArray();
+                foreach($cIds as $id) { $ids->put($id, \App\Models\CommerceRekon::class); $toProcess[] = [$id, \App\Models\CommerceRekon::class]; }
+                foreach($wIds as $id) { $ids->put($id, \App\Models\WarehouseRekon::class); $toProcess[] = [$id, \App\Models\WarehouseRekon::class]; }
+            } elseif ($currentClass === \App\Models\CommerceRekon::class || $currentClass === \App\Models\WarehouseRekon::class) {
+                // Determine column based on type
+                $col = ($currentClass === \App\Models\CommerceRekon::class) ? 'rekon_id' : 'warehouse_rekon_id';
+                $bIds = DB::table('project_batches')->where($col, $currentId)->pluck('id')->toArray();
+                foreach($bIds as $id) { $ids->put($id, \App\Models\ProjectBatch::class); $toProcess[] = [$id, \App\Models\ProjectBatch::class]; }
+            } elseif ($currentClass === \App\Models\ProjectBatch::class) {
+                $pIds = DB::table('projects')->where('batch_id', $currentId)->pluck('id')->toArray();
+                foreach($pIds as $id) { $ids->put($id, \App\Models\Project::class); }
+            }
+        }
+
+        return $ids;
     }
 
     protected function updateProjectPhase($model, string $newPhase)

@@ -336,12 +336,12 @@
                                         @foreach($siteBoqs as $sb)
                                             <div class="rounded-xl border border-[#e6e7f0] bg-white p-3 dark:border-brand-darkLine dark:bg-[#0f1728]">
                                                 <p class="text-sm font-semibold truncate" title="{{ $sb->file_name }}">{{ $sb->file_name }}</p>
-                                                <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-brand-muted dark:text-slate-500">
+                                                <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-brand-muted dark:text-slate-400">
                                                     <span>{{ strtoupper($sb->file_extension ?? '-') }}</span>
-                                                    <span class="opacity-50">#{{ $sb->project_id ?? ($sb->project_batch_id ?? 'BATCH') }}</span>
+                                                    <span class="opacity-60">#{{ $sb->project_id ?? ($sb->project_batch_id ?? 'BATCH') }}</span>
                                                 </div>
                                                 <div class="mt-3">
-                                                    <a href="{{ route('project-data.evidence-files.download', [$project, $sb->id]) }}" target="_blank" class="text-xs font-bold text-brand-blue hover:underline">Lihat</a>
+                                                    <a href="{{ route('project-data.evidence-files.download', [$project, $sb->id]) }}" target="_blank" class="text-xs font-bold text-brand-blue dark:text-blue-400 hover:underline">Lihat</a>
                                                 </div>
                                             </div>
                                         @endforeach
@@ -355,7 +355,7 @@
                                     <div class="mt-3 rounded-xl border border-[#e6e7f0] bg-white p-3 dark:border-brand-darkLine dark:bg-[#0f1728]">
                                         <p class="text-sm font-semibold truncate">{{ $boqFile->file_name }}</p>
                                         <div class="mt-3">
-                                            <a href="{{ route('project-data.evidence-files.download', [$project, $boqFile->id]) }}" target="_blank" class="text-xs font-bold text-brand-blue hover:underline">Lihat BoQ</a>
+                                            <a href="{{ route('project-data.evidence-files.download', [$project, $boqFile->id]) }}" target="_blank" class="text-xs font-bold text-brand-blue dark:text-blue-400 hover:underline">Lihat BoQ</a>
                                         </div>
                                     </div>
                                 @else
@@ -367,7 +367,7 @@
 
                     @if(in_array(Auth::user()->role, ['admin', 'commerce']))
                         <div class="mt-6 pt-4 border-t border-dashed border-[#d9dceb] dark:border-brand-darkLine">
-                            <form action="{{ route('project-data.evidences.store', $project) }}" 
+                            <form id="boq-evidence-form" action="{{ route('project-data.evidences.store', $project) }}" 
                                   method="POST" 
                                   enctype="multipart/form-data" 
                                   class="space-y-3">
@@ -413,6 +413,47 @@
         $('#boqSiteFilter').on('change', function() {
             table.draw();
         });
+
+        // Evidence Upload Progress Tracker
+        const boqForm = document.getElementById('boq-evidence-form');
+        if (boqForm) {
+            boqForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const formData = new FormData(this);
+                const fileInput = this.querySelector('input[name="evidence_file"]');
+                const fileName = fileInput.files[0] ? fileInput.files[0].name : "BoQ File";
+
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', this.getAttribute('action'), true);
+                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+                if (window.trackUpload) {
+                    window.trackUpload(xhr, fileName);
+                }
+
+                xhr.onload = function() {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        if (window.showToast) {
+                            window.showToast('File BoQ telah diperbarui.', 'success');
+                        }
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                    } else {
+                        let errorMsg = 'Gagal mengunggah file';
+                        try {
+                            const res = JSON.parse(xhr.responseText);
+                            errorMsg = res.message || errorMsg;
+                        } catch(err) {}
+                        if (window.showToast) {
+                            window.showToast(errorMsg, 'error');
+                        }
+                    }
+                };
+
+                xhr.send(formData);
+            });
+        }
     });
 </script>
 @endpush

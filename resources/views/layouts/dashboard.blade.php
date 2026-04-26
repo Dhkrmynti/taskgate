@@ -20,6 +20,23 @@
                 document.documentElement.classList.add('sidebar-collapsed');
              }
         })();
+
+       document.addEventListener('DOMContentLoaded', function() {
+          const sidebarGroups = document.querySelectorAll('details[data-sidebar-group]');
+          sidebarGroups.forEach(group => {
+             const label = group.querySelector('.menu-text')?.textContent.trim();
+             if (!label) return;
+             const storageKey = 'sidebar_group_' + label.toLowerCase().replace(/\s+/g, '_');
+             const savedState = localStorage.getItem(storageKey);
+             if (savedState !== null) {
+                if (savedState === 'true') group.setAttribute('open', '');
+                else group.removeAttribute('open');
+             }
+             group.addEventListener('toggle', function() {
+                localStorage.setItem(storageKey, group.open);
+             });
+          });
+       });
     </script>
    <style>
       :root {
@@ -83,6 +100,7 @@
 
       body {
          background: var(--app-bg);
+         color: var(--panel-text);
       }
 
       .sidebar-scroll {
@@ -1357,6 +1375,31 @@ $activeMainMenu = request()->routeIs('dashboard')
       </div>
    @endif
 
+   <div id="upload-progress-modal" class="upload-modal-backdrop hidden">
+      <div class="upload-progress-card">
+         <div class="flex items-center gap-4 mb-4">
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+               </svg>
+            </div>
+            <div class="min-w-0 flex-1">
+               <h3 class="text-sm font-bold text-slate-800 dark:text-white truncate" id="upload-file-name">Uploading file...</h3>
+               <p class="text-[10px] uppercase font-black tracking-widest text-slate-400 mt-1" id="upload-speed-info">Calculating speed...</p>
+            </div>
+         </div>
+
+         <div class="relative h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+            <div id="upload-progress-bar" class="absolute inset-y-0 left-0 w-0 bg-blue-600 transition-all duration-300 progress-bar-shimmer"></div>
+         </div>
+
+         <div class="mt-4 flex items-center justify-between">
+            <span class="text-[10px] font-black text-blue-600 dark:text-blue-400" id="upload-percentage">0%</span>
+            <span class="text-[10px] font-bold text-slate-400" id="upload-bytes">0 / 0 MB</span>
+         </div>
+      </div>
+   </div>
+
    <div id="confirm-modal" class="fixed inset-0 z-[70] hidden items-center justify-center">
       <div id="confirm-backdrop" class="absolute inset-0 bg-slate-950/55 backdrop-blur-[2px]"></div>
       <div
@@ -1663,9 +1706,64 @@ $activeMainMenu = request()->routeIs('dashboard')
                sidebar.classList.add('-translate-x-full');
             }
          });
+
+         window.trackUpload = function(xhr, fileName) {
+            const modal = document.getElementById('upload-progress-modal');
+            const progressBar = document.getElementById('upload-progress-bar');
+            const percentageText = document.getElementById('upload-percentage');
+            const bytesText = document.getElementById('upload-bytes');
+            const speedText = document.getElementById('upload-speed-info');
+            const nameText = document.getElementById('upload-file-name');
+
+            if (!modal) return;
+            nameText.textContent = fileName || 'Uploading file...';
+            modal.classList.remove('hidden');
+            modal.classList.add('flex', 'items-center', 'justify-center');
+
+            let startTime = Date.now();
+
+            xhr.upload.addEventListener('progress', function(e) {
+               if (e.lengthComputable) {
+                  const percent = Math.round((e.loaded / e.total) * 100);
+                  progressBar.style.width = percent + '%';
+                  percentageText.textContent = percent + '%';
+                  
+                  const loadedMb = (e.loaded / (1024 * 1024)).toFixed(2);
+                  const totalMb = (e.total / (1024 * 1024)).toFixed(2);
+                  bytesText.textContent = `${loadedMb} / ${totalMb} MB`;
+
+                  const duration = (Date.now() - startTime) / 1000;
+                  if (duration > 0.2) {
+                     const speedbps = (e.loaded * 8) / duration;
+                     const speedMbps = (speedbps / (1024 * 1024)).toFixed(2);
+                     speedText.textContent = `${speedMbps} Mbps • Transferring data...`;
+                  }
+               }
+            });
+
+            xhr.upload.addEventListener('load', function() {
+               speedText.textContent = '100% Uploaded • Processing on server...';
+               progressBar.classList.add('animate-pulse');
+            });
+
+            xhr.addEventListener('load', function() {
+               setTimeout(() => {
+                  modal.classList.add('hidden');
+                  modal.classList.remove('flex', 'items-center', 'justify-center');
+                  progressBar.style.width = '0%';
+                  progressBar.classList.remove('animate-pulse');
+               }, 800);
+            });
+
+            xhr.addEventListener('error', function() {
+               modal.classList.add('hidden');
+               modal.classList.remove('flex', 'items-center', 'justify-center');
+            });
+         };
       })();
    </script>
    @stack('scripts')
+    @include('partials.native-toast')
 </body>
 
 </html>
