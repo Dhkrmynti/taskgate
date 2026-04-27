@@ -5,6 +5,7 @@
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width, initial-scale=1.0">
    <title>@yield('title', 'Taskgate Dashboard')</title>
+   <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <script>
         // Theme initialization (must run immediately)
@@ -659,6 +660,7 @@
           'pm-projects' => 'PM Project',
           'waspangs' => 'Waspang',
           'mitras' => 'Mitra',
+          'users' => 'Manajemen Pengguna',
       ];
 $activeMainMenu = request()->routeIs('dashboard')
           ? 'dashboard'

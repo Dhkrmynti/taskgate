@@ -27,8 +27,14 @@ class MasterDataController extends Controller
         $config = $this->resourceConfig($resource);
         $data = $request->validate($config['rules'], $config['messages'] ?? []);
 
+        $payload = $this->payloadFromData($config, $data);
+        
+        if ($config['table'] === 'users' && isset($payload['password'])) {
+            $payload['password'] = bcrypt($payload['password']);
+        }
+
         DB::table($config['table'])->insert([
-            ...$this->payloadFromData($config, $data),
+            ...$payload,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -38,21 +44,38 @@ class MasterDataController extends Controller
             ->with('status', $config['label'].' berhasil ditambahkan.');
     }
 
-    public function update(Request $request, string $resource, int $id): RedirectResponse
+    public function update(Request $request, string $resource, int $id)
     {
-        $config = $this->resourceConfig($resource);
+        $config = $this->resourceConfig($resource, $id);
         $data = $request->validate($config['rules'], $config['messages'] ?? []);
+
+        $payload = $this->payloadFromData($config, $data);
+
+        if ($config['table'] === 'users') {
+            if (!empty($payload['password'])) {
+                $payload['password'] = bcrypt($payload['password']);
+            } else {
+                unset($payload['password']);
+            }
+        }
 
         DB::table($config['table'])
             ->where('id', $id)
             ->update([
-                ...$this->payloadFromData($config, $data),
+                ...$payload,
                 'updated_at' => now(),
             ]);
 
+        if ($request->wantsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => $config['label'] . ' berhasil diperbarui.'
+            ]);
+        }
+
         return redirect()
             ->route('master-data.index', $resource)
-            ->with('status', $config['label'].' berhasil diperbarui.');
+            ->with('status', $config['label'] . ' berhasil diperbarui.');
     }
 
     public function destroy(string $resource, int $id): RedirectResponse
@@ -77,16 +100,41 @@ class MasterDataController extends Controller
             'pm-projects' => ['label' => 'PM Project', 'table' => 'pm_projects', 'order_by' => 'name', 'fields' => [['name' => 'name', 'label' => 'Name', 'type' => 'text', 'placeholder' => 'Tambah PM project']], 'rules' => ['name' => ['required', 'string', 'max:255']]],
             'waspangs' => ['label' => 'Waspang', 'table' => 'waspangs', 'order_by' => 'name', 'fields' => [['name' => 'name', 'label' => 'Name', 'type' => 'text', 'placeholder' => 'Tambah waspang']], 'rules' => ['name' => ['required', 'string', 'max:255']]],
             'mitras' => ['label' => 'Mitra', 'table' => 'mitras', 'order_by' => 'name', 'fields' => [['name' => 'name', 'label' => 'Name', 'type' => 'text', 'placeholder' => 'Tambah mitra']], 'rules' => ['name' => ['required', 'string', 'max:255']]],
+            'users' => [
+                'label' => 'Pengguna',
+                'table' => 'users',
+                'order_by' => 'name',
+                'fields' => [
+                    ['name' => 'name', 'label' => 'Nama', 'type' => 'text', 'placeholder' => 'Nama lengkap'],
+                    ['name' => 'email', 'label' => 'Email', 'type' => 'email', 'placeholder' => 'Alamat email'],
+                    ['name' => 'password', 'label' => 'Password', 'type' => 'password', 'placeholder' => 'Password (kosongkan jika tidak diubah)'],
+                    ['name' => 'role', 'label' => 'Role', 'type' => 'select', 'options' => ['admin' => 'Admin', 'warehouse' => 'Warehouse', 'finance' => 'Finance', 'procurement' => 'Procurement', 'konstruksi' => 'Konstruksi', 'commerce' => 'Commerce']],
+                ],
+                'rules' => [
+                    'name' => ['required', 'string', 'max:255'],
+                    'email' => ['required', 'email', 'max:255'],
+                    'password' => ['nullable', 'string', 'min:8'],
+                    'role' => ['required', 'string', 'in:admin,warehouse,finance,procurement,konstruksi,commerce'],
+                ]
+            ],
         ];
     }
 
-    private function resourceConfig(string $resource): array
+    private function resourceConfig(string $resource, ?int $id = null): array
     {
         $resources = self::resources();
 
         abort_unless(isset($resources[$resource]), 404);
 
-        return $resources[$resource] + [
+        $config = $resources[$resource];
+
+        if ($resource === 'users' && $id) {
+            $config['rules']['email'] = ['required', 'email', 'max:255', 'unique:users,email,'.$id];
+        } elseif ($resource === 'users') {
+            $config['rules']['email'] = ['required', 'email', 'max:255', 'unique:users,email'];
+        }
+
+        return $config + [
             'title' => Str::headline(str_replace('-', ' ', $resource)),
         ];
     }
